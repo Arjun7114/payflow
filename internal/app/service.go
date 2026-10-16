@@ -126,3 +126,16 @@ func (s *Service) replay(ctx context.Context, paymentID string) (Result, error) 
 	last := events[len(events)-1]
 	return Result{State: state, Event: last.Type, Replayed: true}, nil
 }
+
+// Status returns a payment's current state without changing anything.
+func (s *Service) Status(ctx context.Context, paymentID string) (domain.State, error) {
+	events, err := s.store.Load(ctx, paymentID)
+	if err != nil {
+		return "", err
+	}
+	state, ok := domain.CurrentState(events)
+	if !ok {
+		return "", store.ErrNotFound
+	}
+	return state, nil
+}
