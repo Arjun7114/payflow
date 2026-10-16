@@ -74,9 +74,19 @@ func (s *Service) Handle(ctx context.Context, paymentID string, cmd domain.Comma
 	}
 
 	// The pure core decides legality. No money logic lives here.
+	// The pure core decides legality. No money logic lives here.
 	next, evtType, err := domain.Transition(current, cmd)
 	if err != nil {
-		return Result{}, err // ErrIllegalTransition, surfaced to the caller
+		// A concurrent duplicate with THIS key may have committed between our
+		// SeenKey check and our Load, advancing the state so the command is now
+		// illegal. Before surfacing the error, re-check our own key: if it
+		// already applied, this is that same request losing the race — replay
+		// it, don't report a spurious illegal transition. Only a key we have
+		// genuinely never applied yields ErrIllegalTransition.
+		if seen, _ := s.store.SeenKey(ctx, paymentID, idempotencyKey); seen {
+			return s.replay(ctx, paymentID)
+		}
+		return Result{}, err
 	}
 
 	evt := domain.Event{
