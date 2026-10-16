@@ -17,6 +17,7 @@ import (
 //     sequence — the concurrency guarantee.
 //   - UNIQUE (payment_id, idempotency_key) rejects a retried command — the
 //     idempotency guarantee.
+//
 // A violation of either surfaces as a Postgres unique-violation, which Append
 // maps back to the same ErrConcurrencyConflict / ErrDuplicateKey the in-memory
 // store returns, so callers behave identically against either backend.
