@@ -27,26 +27,40 @@ Invariants proven (domain):
 
 ## Persistence, idempotency & concurrency (Phase 2)
 
+Proven at two layers: the in-memory store (serialized by a mutex) and a real
+Postgres store (serialized by database constraints — no application lock).
+
 | Metric | Value | How to reproduce |
 |---|---|---|
-| Concurrent duplicate requests → effects applied | 100 → 1 | `go test ./internal/app -race -run TestService_Concurrent -v` |
+| Concurrent duplicate requests (same key) → effects applied | 100 → 1 | `go test ./internal/app -race -run TestService_Concurrent -v` |
 | Concurrent distinct-key captures → successes | 100 → 1 | same test file |
-| Store race (same sequence, N writers) → winners | 50 → 1 | `go test ./internal/store -race -v` |
+| In-memory store race (same sequence, N writers) → winners | 50 → 1 | `go test ./internal/store -race -v` |
+| Postgres store race (same sequence, N writers) → commits | 50 → 1 | `DATABASE_URL=... go test ./internal/store -run TestPostgres -v` |
 | Tests pass under Go race detector | yes | `go test ./... -race` |
 | Concurrency tests re-run under stress | 20× clean | `go test ./internal/app -race -run TestService_Concurrent -count=20` |
 
-Guarantees proven (store + service):
+Guarantees proven:
 - Idempotency: N identical requests (same key) apply exactly one effect; the
   rest are detected as retries and replayed, never re-applied.
 - Optimistic concurrency: N genuinely distinct requests racing to advance one
   payment yield exactly one success; the rest are rejected as conflicts.
-- Note: proven against the in-memory store (serialized by mutex). The same
-  guarantees over a real database, enforced by a UNIQUE constraint, land with
-  the Postgres adapter.
+- Database-enforced: against real Postgres, the same guarantees are enforced by
+  PRIMARY KEY (payment_id, sequence) and UNIQUE (payment_id, idempotency_key) —
+  the losing concurrent INSERTs are rejected by the database, with no
+  application-level lock. The Postgres integration tests skip automatically when
+  DATABASE_URL is unset, so the default suite needs no database.
+
+## REST API (Phase 2)
+
+| Metric | Value | How to reproduce |
+|---|---|---|
+| HTTP endpoints | 10 | `internal/api/api.go` (Routes) |
+| Framework dependencies | 0 (net/http only) | `go list -deps ./internal/api` |
+| Illegal transition over HTTP | 409 Conflict | `go test ./internal/api -v` |
+| Missing idempotency key | 400 Bad Request | `go test ./internal/api -v` |
 
 ## Planned (not yet measured)
 
-- Same guarantees enforced by Postgres (UNIQUE constraint) — Phase 2 cont.
-- API latency p50 / p95 — Phase 2 (REST)
+- API latency p50 / p95 — load test
 - Compile-time rejection of illegal transitions — Haskell port
-- Fraud model precision / recall on synthetic data — Phase 3
+- Fraud model precision / recall on synthetic data — Phase 3 (AI)
