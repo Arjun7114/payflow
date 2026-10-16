@@ -8,23 +8,27 @@ import (
 )
 
 // Memory is an in-memory Store. It is safe for concurrent use: a single mutex
-// guards the whole map, and critically, the expected-sequence check and the
-// append happen inside the same locked section — so two goroutines racing on
-// the same payment cannot both succeed at the same sequence. One wins; the
-// other gets ErrConcurrencyConflict. This models exactly what a Postgres
-// unique constraint on (payment_id, sequence) enforces at the DB level later.
+// guards all state, and the idempotency-key check, the optimistic sequence
+// check, and the append all happen inside one critical section — so neither a
+// retry nor a concurrent writer can slip through. This models exactly what a
+// Postgres unique constraint on (payment_id, sequence) and a stored
+// idempotency key enforce at the database level later.
 type Memory struct {
 	mu   sync.Mutex
 	logs map[string][]domain.Event
+	keys map[string]map[string]bool // paymentID -> set of used idempotency keys
 }
 
 // NewMemory returns an empty in-memory store.
 func NewMemory() *Memory {
-	return &Memory{logs: make(map[string][]domain.Event)}
+	return &Memory{
+		logs: make(map[string][]domain.Event),
+		keys: make(map[string]map[string]bool),
+	}
 }
 
 // Load returns a copy of the payment's events so callers cannot mutate the
-// store's internal slice.
+// store's internal slice. Returns ErrNotFound for an unknown payment.
 func (m *Memory) Load(ctx context.Context, paymentID string) ([]domain.Event, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -38,16 +42,31 @@ func (m *Memory) Load(ctx context.Context, paymentID string) ([]domain.Event, er
 	return out, nil
 }
 
-// Append enforces the optimistic-concurrency contract: it writes e only if the
-// current log length equals expectedSeq. The check and the write are a single
-// critical section, so the decision cannot be raced.
-func (m *Memory) Append(ctx context.Context, e domain.Event, expectedSeq int) error {
+// Append enforces both guarantees in one critical section: the idempotency-key
+// check and the optimistic sequence check happen together with the write, so
+// neither a retry nor a concurrent writer can slip through.
+func (m *Memory) Append(ctx context.Context, e domain.Event, expectedSeq int, idempotencyKey string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.keys[e.PaymentID][idempotencyKey] {
+		return ErrDuplicateKey
+	}
 	if len(m.logs[e.PaymentID]) != expectedSeq {
 		return ErrConcurrencyConflict
 	}
+
 	m.logs[e.PaymentID] = append(m.logs[e.PaymentID], e)
+	if m.keys[e.PaymentID] == nil {
+		m.keys[e.PaymentID] = make(map[string]bool)
+	}
+	m.keys[e.PaymentID][idempotencyKey] = true
 	return nil
+}
+
+// SeenKey reports whether this key was already applied to this payment.
+func (m *Memory) SeenKey(ctx context.Context, paymentID, idempotencyKey string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.keys[paymentID][idempotencyKey], nil
 }

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -22,7 +23,7 @@ func TestMemory_LoadNotFound(t *testing.T) {
 func TestMemory_AppendThenLoad(t *testing.T) {
 	m := NewMemory()
 	ctx := context.Background()
-	if err := m.Append(ctx, genesis("p1"), 0); err != nil {
+	if err := m.Append(ctx, genesis("p1"), 0, "k"); err != nil {
 		t.Fatalf("append seq 0: %v", err)
 	}
 	events, err := m.Load(ctx, "p1")
@@ -38,18 +39,33 @@ func TestMemory_AppendThenLoad(t *testing.T) {
 func TestMemory_StaleSequenceRejected(t *testing.T) {
 	m := NewMemory()
 	ctx := context.Background()
-	_ = m.Append(ctx, genesis("p1"), 0) // log now length 1
+	_ = m.Append(ctx, genesis("p1"), 0, "k0") // log now length 1
 
-	// Another writer still thinks the log is empty (expectedSeq 0).
-	err := m.Append(ctx, genesis("p1"), 0)
+	// Another writer, different key, still thinks the log is empty.
+	err := m.Append(ctx, genesis("p1"), 0, "k1")
 	if err != ErrConcurrencyConflict {
 		t.Fatalf("got %v, want ErrConcurrencyConflict", err)
 	}
 }
 
-// The core guarantee: when many goroutines race to append the SAME sequence,
-// exactly one succeeds. This is the store-level foundation of idempotency
-// under concurrency (the service-level test comes in Step 8).
+// A reused idempotency key is rejected as a duplicate.
+func TestMemory_DuplicateKeyRejected(t *testing.T) {
+	m := NewMemory()
+	ctx := context.Background()
+	if err := m.Append(ctx, genesis("p1"), 0, "same"); err != nil {
+		t.Fatalf("first append: %v", err)
+	}
+	// Same key again — even at a valid next sequence — must be refused.
+	e := genesis("p1")
+	e.Sequence = 1
+	if err := m.Append(ctx, e, 1, "same"); err != ErrDuplicateKey {
+		t.Fatalf("got %v, want ErrDuplicateKey", err)
+	}
+}
+
+// The core store guarantee: when many goroutines race to append the SAME
+// sequence with DISTINCT keys, exactly one succeeds. This isolates the
+// optimistic sequence check (not key dedup) as the serialization point.
 func TestMemory_ConcurrentAppendExactlyOneWins(t *testing.T) {
 	m := NewMemory()
 	ctx := context.Background()
@@ -59,9 +75,10 @@ func TestMemory_ConcurrentAppendExactlyOneWins(t *testing.T) {
 	results := make(chan error, racers)
 
 	for i := 0; i < racers; i++ {
+		key := "k" + strconv.Itoa(i)
 		go func() {
-			<-start // release all goroutines at once
-			results <- m.Append(ctx, genesis("race"), 0)
+			<-start
+			results <- m.Append(ctx, genesis("race"), 0, key)
 		}()
 	}
 	close(start)
@@ -75,7 +92,6 @@ func TestMemory_ConcurrentAppendExactlyOneWins(t *testing.T) {
 	if wins != 1 {
 		t.Fatalf("%d goroutines succeeded, want exactly 1", wins)
 	}
-
 	events, _ := m.Load(ctx, "race")
 	if len(events) != 1 {
 		t.Fatalf("log has %d events, want 1", len(events))
