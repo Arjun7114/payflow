@@ -38,10 +38,11 @@ def generate(n: int = 10_000, fraud_rate: float = 0.02, seed: int = 42) -> pd.Da
     n_legit = n - n_fraud
 
     # --- Legitimate transactions ------------------------------------------
-    legit_amount = rng.gamma(shape=2.0, scale=40.0, size=n_legit)           # ~ most under 200
-    legit_hour = rng.normal(loc=14.0, scale=4.0, size=n_legit) % 24          # daytime-centered
-    legit_velocity = rng.poisson(lam=1.5, size=n_legit).astype(float)        # few per window
-    legit_ratio = rng.normal(loc=1.0, scale=0.3, size=n_legit).clip(0.1)     # near account average
+    # Wider spread, so "normal" already contains big spenders and night owls.
+    legit_amount = rng.gamma(shape=2.0, scale=60.0, size=n_legit)
+    legit_hour = rng.normal(loc=14.0, scale=6.0, size=n_legit) % 24
+    legit_velocity = rng.poisson(lam=2.0, size=n_legit).astype(float)
+    legit_ratio = rng.normal(loc=1.0, scale=0.6, size=n_legit).clip(0.1)
 
     legit = pd.DataFrame({
         "amount": legit_amount,
@@ -52,15 +53,14 @@ def generate(n: int = 10_000, fraud_rate: float = 0.02, seed: int = 42) -> pd.Da
     })
 
     # --- Fraudulent transactions ------------------------------------------
-    # A mix of high-value fraud and tiny card-testing probes.
-    high_value = rng.gamma(shape=3.0, scale=300.0, size=n_fraud)            # large amounts
-    probes = rng.uniform(0.5, 3.0, size=n_fraud)                            # tiny test charges
-    pick_probe = rng.random(n_fraud) < 0.3
-    fraud_amount = np.where(pick_probe, probes, high_value)
-
-    fraud_hour = rng.normal(loc=2.0, scale=2.5, size=n_fraud) % 24           # late-night-centered
-    fraud_velocity = rng.poisson(lam=8.0, size=n_fraud).astype(float)       # bursty
-    fraud_ratio = rng.normal(loc=6.0, scale=2.0, size=n_fraud).clip(0.1)    # far from account average
+    # Only SHIFTED from normal, not separated. Distributions overlap heavily, so
+    # most fraud looks plausibly normal on any single feature — the model must
+    # combine weak signals. This is what makes the task realistic (and the
+    # metrics believable) rather than trivially perfect.
+    fraud_amount = rng.gamma(shape=2.0, scale=95.0, size=n_fraud)            # a bit higher, overlaps
+    fraud_hour = rng.normal(loc=9.0, scale=7.0, size=n_fraud) % 24           # mildly skewed, broad
+    fraud_velocity = rng.poisson(lam=3.5, size=n_fraud).astype(float)        # somewhat bursty
+    fraud_ratio = rng.normal(loc=2.0, scale=1.2, size=n_fraud).clip(0.1)     # elevated, overlaps
 
     fraud = pd.DataFrame({
         "amount": fraud_amount,
@@ -71,7 +71,6 @@ def generate(n: int = 10_000, fraud_rate: float = 0.02, seed: int = 42) -> pd.Da
     })
 
     df = pd.concat([legit, fraud], ignore_index=True)
-    # Shuffle so fraud rows aren't all at the end.
     df = df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
     return df
 
