@@ -66,7 +66,7 @@ def train_and_evaluate(csv_path: str, contamination: float = 0.02, seed: int = 4
         "roc_auc": round(float(roc_auc_score(y_test, scores_test)), 4),
         "contamination": contamination,
         "seed": seed,
-        "note": "metrics on SYNTHETIC data designed to be separable; validates pipeline, not production performance",
+        "note": "metrics on SYNTHETIC data with realistically overlapping classes; validates pipeline, not production performance",
     }
     return model, metrics
 

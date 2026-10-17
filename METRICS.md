@@ -59,8 +59,40 @@ Guarantees proven:
 | Illegal transition over HTTP | 409 Conflict | `go test ./internal/api -v` |
 | Missing idempotency key | 400 Bad Request | `go test ./internal/api -v` |
 
+## AI fraud layer (Phase 3)
+
+All figures below are on **synthetic data** with realistically overlapping
+fraud/legit distributions (see `ai/payflow_ai/generate.py`). They validate the
+end-to-end pipeline — generate → train → evaluate → threshold → act — and
+demonstrate method and judgment. They are **not** claims about real-world
+fraud-detection performance, where labels are scarce, fraud drifts, and feature
+engineering dominates.
+
+| Metric | Value | How to reproduce |
+|---|---|---|
+| Model | Isolation Forest (unsupervised) | `ai/payflow_ai/model.py` |
+| Training uses labels | no (labels used only to evaluate) | `model.py` |
+| ROC-AUC (ranking quality) | ~0.88 | `python -m payflow_ai.model` |
+| Operating point | recall-leaning, threshold ≈ -0.041 | `python -m payflow_ai.threshold` |
+| — precision at that point | ~0.18 | threshold sweep |
+| — recall at that point | ~0.68 | threshold sweep |
+| — share of traffic flagged | ~7.5% | threshold sweep |
+| AI actions on the core | 1 only: request hold via audited API | `ai/payflow_ai/bridge.py` |
+
+Design notes:
+- **Threshold is a deliberate choice, not a default.** The sweep shows the full
+  precision/recall tradeoff; the recall-leaning point reflects that in payments
+  a missed fraud is a realized loss while a false hold is reviewable. A
+  different business could justify a different point from the same curve.
+- **The AI never moves money.** Its sole action is `POST /flag-hold`, which the
+  Go core validates like any other request — demonstrated by three outcomes:
+  risky → held, safe → ignored, illegal hold → refused by the core (HTTP 409).
+- ROC-AUC ~0.88 on separable-but-overlapping synthetic data indicates the
+  model ranks risk well; the low precision/recall at any single threshold is
+  the expected consequence of a 2% base rate, not a defect.
+
 ## Planned (not yet measured)
 
-- API latency p50 / p95 — load test
-- Compile-time rejection of illegal transitions — Haskell port
-- Fraud model precision / recall on synthetic data — Phase 3 (AI)
+- Compile-time rejection of illegal transitions — Haskell port (in progress)
+- Rules-based failure triage — in progress
+- API latency p50 / p95 — load test (optional)
