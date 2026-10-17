@@ -2,3 +2,6 @@ scikit-learn
 numpy
 pandas
 requests
+
+# dev/test only
+pytest
