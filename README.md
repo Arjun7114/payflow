@@ -1,5 +1,7 @@
 # payflow
 
+[![CI](https://github.com/Arjun7114/payflow/actions/workflows/ci.yml/badge.svg)](https://github.com/Arjun7114/payflow/actions/workflows/ci.yml)
+
 A typed, event-sourced payment-lifecycle engine in Go, with a strictly
 separated advisory AI layer and a Haskell port of the core that makes illegal
 states unrepresentable at compile time.
