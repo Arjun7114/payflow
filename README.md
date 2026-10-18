@@ -40,30 +40,28 @@ event, so a payment's history is its own audit trail.
   *compile time* via sum types and exhaustive pattern matching.
 
 ## Architecture
-        HTTP  (net/http, no framework)
-                   │
-                   ▼
-        Application service ───────── idempotency keys (retry-safe)
-                   │
-                   ▼
-      Pure domain core (Go) ───────── 9 legal transitions;
-       deterministic, 0 deps          illegal moves rejected
-                   │
-                   ▼
-         Store interface
-         ├── in-memory  (mutex)
-         └── Postgres   (PK + UNIQUE constraints enforce concurrency)
+```mermaid
+flowchart TD
+    API["REST API<br/><small>net/http, no framework</small>"]
+    SVC["Application service<br/><small>idempotency keys</small>"]
+    CORE["Pure domain core<br/><small>9 transitions, 0 deps</small>"]
+    STORE["Store (event log)<br/><small>in-memory / Postgres</small>"]
 
-── AI layer (Python, separate process) ─────────────────────────────
-Reads payment data; its ONLY action is POST /payments/{id}/flag-hold
-through the audited API. Never moves money, never writes the ledger.
-• Fraud scorer — Isolation Forest (unsupervised), synthetic data
-• Failure triage — rules-based explainer (optional LLM layer)
+    API --> SVC
+    SVC --> CORE
+    CORE --> STORE
 
-── Haskell port (haskell-core/) ────────────────────────────────────
-The pure core as sum types; illegal states are unrepresentable and
-transition totality is checked at compile time (-Wincomplete-patterns).
+    subgraph AI["AI layer (Python, separate process)"]
+        FRAUD["Fraud scorer<br/><small>Isolation Forest</small>"]
+        TRIAGE["Failure triage<br/><small>rules-based</small>"]
+    end
 
+    STORE -. "reads events" .-> AI
+    AI -. "requests hold via audited API" .-> API
+
+    HS["Haskell port<br/><small>illegal states won't compile</small>"]
+    CORE -. "ported to" .-> HS
+```
 
 ## Repository layout
 
