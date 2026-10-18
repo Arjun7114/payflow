@@ -7,8 +7,9 @@
 // fast. They are not a claim about production latency under real network load.
 //
 // Usage:
-//   go run ./cmd/loadtest                 # defaults: 2000 requests, 50 concurrent
-//   go run ./cmd/loadtest -n 5000 -c 100
+//
+//	go run ./cmd/loadtest                 # defaults: 2000 requests, 50 concurrent
+//	go run ./cmd/loadtest -n 5000 -c 100
 package main
 
 import (
