@@ -114,8 +114,36 @@ What the compiler guarantees here that Go cannot:
 The Hedgehog properties mirror the Go suite (legality, terminal-finality,
 no double-capture), so both implementations are checked against the same laws.
 
-## Planned (not yet measured)
+markdown
+## Latency (load test)
 
-- Compile-time rejection of illegal transitions — Haskell port (in progress)
-- Rules-based failure triage — in progress
-- API latency p50 / p95 — load test (optional)
+Measured by `cmd/loadtest` firing 2000 capture requests at 50 concurrent
+workers against a locally running server. Client, server, and database all run
+on one machine over localhost, so these are a RELATIVE measure (in-memory vs
+Postgres, and a check that the handler path is fast) — not a claim about
+production latency under real network conditions and load.
+
+| Metric | In-memory store | Postgres store |
+|---|---|---|
+| Throughput | ~4,350 req/s | ~1,650 req/s |
+| Latency p50 | ~0.5 ms | ~10 ms |
+| Latency p95 | ~21 ms | ~12 ms |
+| Latency p99 | ~26 ms | ~18 ms |
+| Errors | 0 | 0 |
+
+Reproduce:
+terminal 1 — server (set DATABASE_URL for the Postgres run)
+
+go run ./cmd/payflow
+
+terminal 2
+
+go run ./cmd/loadtest -n 2000 -c 50
+
+
+Reading: the in-memory store has a faster median but a jittery tail (GC and
+scheduler pauses); Postgres pays ~10 ms per request for a network round-trip and
+a constraint-checked INSERT, but delivers a tighter, more predictable latency
+distribution. Durability costs median latency and buys consistency.
+
+I rounded to clean figures (~0.5 ms, ~10 ms) and kept the ~ because these shift run-to-run — honest hedging, consistent with how we’ve recorded everything.
