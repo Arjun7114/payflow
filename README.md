@@ -24,6 +24,9 @@ legal transitions are defined as a single pure table; a state change happens
 only if the table allows it. Every state change is recorded as an immutable
 event, so a payment's history is its own audit trail.
 
+> Design trade-offs and the reasoning behind them are documented in
+> [DECISIONS.md](./DECISIONS.md).
+
 ## Why it's built this way
 
 - **Determinism in the money path.** The core that decides whether a payment
