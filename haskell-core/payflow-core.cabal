@@ -1,0 +1,26 @@
+cabal-version:      3.0
+name:               payflow-core
+version:            0.1.0.0
+synopsis:           Pure payment state machine (Haskell port of payflow's core)
+license:            MIT
+build-type:         Simple
+
+-- The pure domain library: states, transitions, and the guarantee that
+-- illegal transitions cannot be represented.
+library
+    exposed-modules:  Payflow.State
+    hs-source-dirs:   src
+    build-depends:    base >=4 && <5
+    default-language: Haskell2010
+    ghc-options:      -Wall -Wincomplete-patterns
+
+-- Property tests mirroring the Go invariants, using Hedgehog.
+test-suite payflow-core-test
+    type:             exitcode-stdio-1.0
+    main-is:          Spec.hs
+    hs-source-dirs:   test
+    build-depends:    base >=4 && <5
+                    , payflow-core
+                    , hedgehog
+    default-language: Haskell2010
+    ghc-options:      -Wall
