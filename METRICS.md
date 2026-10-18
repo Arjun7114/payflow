@@ -91,6 +91,29 @@ Design notes:
   model ranks risk well; the low precision/recall at any single threshold is
   the expected consequence of a 2% base rate, not a defect.
 
+  ## Haskell port of the pure core (Phase 4)
+
+A port of the deterministic payment core to Haskell, where the type system
+enforces at compile time what the Go version checks at runtime.
+
+| Metric | Value | How to reproduce |
+|---|---|---|
+| States as a sum type (invalid state unrepresentable) | 8 constructors | `haskell-core/src/Payflow/State.hs` |
+| Transition totality checked at compile time | yes (-Wincomplete-patterns) | `cd haskell-core && cabal build` |
+| Property-tested invariants (Hedgehog) | 3 | `cd haskell-core && cabal test` |
+| Generated cases per property | 100 | `cabal test` |
+
+What the compiler guarantees here that Go cannot:
+- A `PaymentState` value can only be one of the 8 declared states; an invalid
+  state cannot be constructed. In Go, state is a string guarded at runtime.
+- The `transition` function is total: because the library is built with
+  `-Wincomplete-patterns`, GHC refuses to compile if any `(state, command)`
+  case is left unhandled. Unhandled transitions are a build error, not a
+  runtime bug.
+
+The Hedgehog properties mirror the Go suite (legality, terminal-finality,
+no double-capture), so both implementations are checked against the same laws.
+
 ## Planned (not yet measured)
 
 - Compile-time rejection of illegal transitions — Haskell port (in progress)
